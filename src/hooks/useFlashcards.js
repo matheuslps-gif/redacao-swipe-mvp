@@ -27,23 +27,27 @@ const useFlashcards = (cards, trailId) => {
   }, [cards, trailId]);
 
   const nextCard = () => {
-    if (currentIndex < shuffledCards.length - 1) {
-      setCurrentIndex(prev => prev + 1);
-    } else {
+    setCurrentIndex((prev) => {
+      if (prev < shuffledCards.length - 1) {
+        return prev + 1;
+      }
       setIsTrailFinished(true);
-    }
+      return prev;
+    });
   };
 
   const currentCard = shuffledCards[currentIndex] || null;
+  const nextCardItem = shuffledCards[currentIndex + 1] || null;
   const progress = shuffledCards.length > 0 ? ((currentIndex + 1) / shuffledCards.length) * 100 : 0;
 
   return {
     currentCard,
+    nextCardItem,
     nextCard,
     isTrailFinished,
     progress,
     totalCards: shuffledCards.length,
-    currentIndex
+    currentIndex,
   };
 };
 

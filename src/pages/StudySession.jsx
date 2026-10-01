@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 export default function StudySession({
   trailName = 'Fundamentos',
@@ -20,6 +20,13 @@ export default function StudySession({
   const [toastMessage, setToastMessage] = useState(null);
   const startXRef = useRef(0);
   const cardRef = useRef(null);
+
+  // Garante que o estado de arrasto seja zerado ao mudar de card
+  useEffect(() => {
+    setDragOffset(0);
+    setIsDragging(false);
+    setAnimatingAction(null);
+  }, [currentCard?.id]);
 
   // Exibe toast temporário
   const showToast = (msg) => {

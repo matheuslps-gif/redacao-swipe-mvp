@@ -48,6 +48,8 @@ function StudySessionRoute({
 
   const {
     currentCard,
+    nextCardItem,
+    nextCard,
     isTrailFinished,
     progress,
     totalCards,
@@ -62,15 +64,24 @@ function StudySessionRoute({
     }
   }, [isTrailFinished, navigate]);
 
+  const handleSwipe = (action) => {
+    if (!currentCard) return;
+    // 1. Registra ação no back-end / Supabase de forma assíncrona/otimista
+    onSwipeAction(action, currentCard, selectedTrail);
+    // 2. Avança o estado local imediatamente para atualizar a UI do flashcard
+    nextCard();
+  };
+
   return (
     <StudySession
       trailName={currentCard?.trailName || 'Fundamentos'}
       currentCard={currentCard}
+      nextCardItem={nextCardItem}
       currentIndex={currentIndex}
       totalCards={totalCards || dailyGoal}
       progress={progress}
       isSaved={isCurrentSaved}
-      onSwipe={(action) => onSwipeAction(action, currentCard, selectedTrail)}
+      onSwipe={handleSwipe}
       onToggleSave={onToggleSaveCard}
       onClose={() => navigate('/')}
       onOpenProfile={onOpenProfile}
