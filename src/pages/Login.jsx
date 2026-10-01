@@ -136,11 +136,8 @@ export default function Login({ onBack }) {
           </div>
         </div>
         <div className="flex flex-col items-center mt-space-md text-center">
-          <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-primary-container shadow-md mb-space-sm text-on-primary">
-            <div className="absolute -top-1 -right-1 w-6 h-6 rounded-lg bg-secondary-container flex items-center justify-center shadow-sm">
-              <span className="material-symbols-outlined text-[14px] text-on-secondary" style={{ fontVariationSettings: "'FILL' 1" }}>bolt</span>
-            </div>
-            <span className="material-symbols-outlined text-[28px] text-primary-fixed">style</span>
+          <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl shadow-md mb-space-sm overflow-hidden border-2 border-primary-container">
+            <img src="/pwa-192x192.png" alt="Mascote redacao.swipe" className="w-full h-full object-cover" />
           </div>
           <div className="flex items-baseline gap-1">
             <span className="font-headline-lg-mobile text-headline-lg-mobile text-primary tracking-tight font-extrabold">redação</span>
