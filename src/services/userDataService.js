@@ -1,7 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export const userDataService = {
-  // Carrega o perfil / progresso isolado do usuário
+  // Carrega o perfil / progresso isolado do usuário (incluindo status Premium e Paywall)
   async getUserProgress(userId) {
     if (!userId) return null;
 
@@ -9,11 +9,21 @@ export const userDataService = {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, name, streak, last_study_date, daily_goal, xp, level, initial_focus')
+          .select('id, name, streak, last_study_date, daily_goal, xp, level, initial_focus, is_premium, subscription_ends_at, free_limit_reset_at')
           .eq('id', userId)
           .single();
 
         if (data && !error) {
+          const isPrem = Boolean(data.is_premium);
+          const subEnd = data.subscription_ends_at ? new Date(data.subscription_ends_at) : null;
+          const resetAt = data.free_limit_reset_at ? new Date(data.free_limit_reset_at) : null;
+
+          // Atualiza cache local
+          localStorage.setItem(`redacaoSwipeIsPremium_${userId}`, isPrem.toString());
+          if (subEnd) localStorage.setItem(`redacaoSwipeSubEnd_${userId}`, subEnd.toISOString());
+          if (resetAt) localStorage.setItem(`redacaoSwipeFreeLimitReset_${userId}`, resetAt.toISOString());
+          else localStorage.removeItem(`redacaoSwipeFreeLimitReset_${userId}`);
+
           return {
             streak: data.streak || 0,
             lastStudyDate: data.last_study_date ? new Date(data.last_study_date) : null,
@@ -22,6 +32,9 @@ export const userDataService = {
             level: data.level || 1,
             name: data.name || 'Estudante',
             initialFocus: data.initial_focus || null,
+            isPremium: isPrem,
+            subscriptionEndsAt: subEnd,
+            freeLimitResetAt: resetAt,
           };
         }
       } catch (err) {
@@ -34,6 +47,9 @@ export const userDataService = {
     const localLastDate = localStorage.getItem(`redacaoSwipeLastStudyDate_${userId}`);
     const localDailyGoal = localStorage.getItem(`redacaoSwipeDailyGoal_${userId}`);
     const localFocus = localStorage.getItem(`redacaoSwipeInitialFocus_${userId}`);
+    const localIsPremium = localStorage.getItem(`redacaoSwipeIsPremium_${userId}`);
+    const localSubEnd = localStorage.getItem(`redacaoSwipeSubEnd_${userId}`);
+    const localResetAt = localStorage.getItem(`redacaoSwipeFreeLimitReset_${userId}`);
 
     return {
       streak: localStreak ? parseInt(localStreak, 10) : 0,
@@ -43,7 +59,60 @@ export const userDataService = {
       level: 1,
       name: 'Estudante',
       initialFocus: localFocus || null,
+      isPremium: localIsPremium === 'true',
+      subscriptionEndsAt: localSubEnd ? new Date(localSubEnd) : null,
+      freeLimitResetAt: localResetAt ? new Date(localResetAt) : null,
     };
+  },
+
+  // Salva ou remove o bloqueio temporário de 24h para usuários free
+  async saveFreeLimitReset(userId, resetDate) {
+    if (!userId) return;
+
+    if (resetDate) {
+      localStorage.setItem(`redacaoSwipeFreeLimitReset_${userId}`, resetDate.toISOString());
+    } else {
+      localStorage.removeItem(`redacaoSwipeFreeLimitReset_${userId}`);
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase
+          .from('profiles')
+          .upsert({
+            id: userId,
+            free_limit_reset_at: resetDate ? resetDate.toISOString() : null,
+            updated_at: new Date().toISOString(),
+          });
+      } catch (err) {
+        console.warn('Erro ao atualizar free_limit_reset_at no Supabase:', err.message);
+      }
+    }
+  },
+
+  // Atualiza status Premium do usuário
+  async updatePremiumStatus(userId, isPremium, subscriptionEndsAt = null) {
+    if (!userId) return;
+
+    localStorage.setItem(`redacaoSwipeIsPremium_${userId}`, isPremium.toString());
+    if (subscriptionEndsAt) {
+      localStorage.setItem(`redacaoSwipeSubEnd_${userId}`, subscriptionEndsAt.toISOString());
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase
+          .from('profiles')
+          .upsert({
+            id: userId,
+            is_premium: isPremium,
+            subscription_ends_at: subscriptionEndsAt ? subscriptionEndsAt.toISOString() : null,
+            updated_at: new Date().toISOString(),
+          });
+      } catch (err) {
+        console.warn('Erro ao atualizar status Premium no Supabase:', err.message);
+      }
+    }
   },
 
   // Salva foco inicial escolhido pelo usuário no zero state

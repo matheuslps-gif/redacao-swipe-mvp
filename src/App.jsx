@@ -9,6 +9,7 @@ import { calculateUserAnalytics, TRAILS_METADATA, COMPETENCIES_METADATA } from '
 
 import ProtectedRoute from './components/ProtectedRoute';
 import BottomNavigation from './components/BottomNavigation';
+import PaywallModal from './components/PaywallModal';
 import Home from './pages/Home';
 import StudySession from './pages/StudySession';
 import SessionCompleted from './pages/SessionCompleted';
@@ -67,10 +68,11 @@ function StudySessionRoute({
 
   const handleSwipe = (action) => {
     if (!currentCard) return;
-    // 1. Registra ação no back-end / Supabase de forma assíncrona/otimista
-    onSwipeAction(action, currentCard, selectedTrail);
-    // 2. Avança o estado local imediatamente para atualizar a UI do flashcard
-    nextCard();
+    // Dispara ação de swipe com verificação de Paywall
+    const allowed = onSwipeAction(action, currentCard, selectedTrail);
+    if (allowed !== false) {
+      nextCard();
+    }
   };
 
   return (
@@ -134,6 +136,32 @@ export default function App() {
     return [];
   });
 
+  // Estados de Assinatura e Paywall (Freemium vs Premium)
+  const [isPremium, setIsPremium] = useState(() => {
+    if (user?.id) {
+      return localStorage.getItem(`redacaoSwipeIsPremium_${user.id}`) === 'true';
+    }
+    return false;
+  });
+
+  const [freeLimitResetAt, setFreeLimitResetAt] = useState(() => {
+    if (user?.id) {
+      const cached = localStorage.getItem(`redacaoSwipeFreeLimitReset_${user.id}`);
+      return cached ? new Date(cached) : null;
+    }
+    return null;
+  });
+
+  const [freeSwipesInWindow, setFreeSwipesInWindow] = useState(() => {
+    if (user?.id) {
+      const cached = localStorage.getItem(`redacaoSwipeWindowSwipes_${user.id}`);
+      return cached ? parseInt(cached, 10) : 0;
+    }
+    return 0;
+  });
+
+  const [showPaywall, setShowPaywall] = useState(false);
+
   // Estatísticas da rodada diária atual
   const [sessionStats, setSessionStats] = useState({
     domino: 0,
@@ -146,7 +174,7 @@ export default function App() {
   // Hook de Gamificação com isolamento por usuário
   const { streak, updateStreak } = useGamification(user?.id);
 
-  // Carrega preferências e histórico real do usuário no Supabase
+  // Carrega preferências, histórico real e status de Paywall do usuário
   const loadUserData = useCallback(async () => {
     if (!user?.id) return;
     try {
@@ -156,8 +184,26 @@ export default function App() {
         userDataService.getUserReviews(user.id),
       ]);
 
-      if (progress?.dailyGoal) setDailyGoal(progress.dailyGoal);
-      if (progress?.initialFocus) setInitialFocus(progress.initialFocus);
+      if (progress) {
+        if (progress.dailyGoal) setDailyGoal(progress.dailyGoal);
+        if (progress.initialFocus) setInitialFocus(progress.initialFocus);
+        setIsPremium(Boolean(progress.isPremium));
+
+        // Valida se o bloqueio de 24h já expirou
+        if (progress.freeLimitResetAt) {
+          if (new Date() >= new Date(progress.freeLimitResetAt)) {
+            setFreeLimitResetAt(null);
+            setFreeSwipesInWindow(0);
+            localStorage.setItem(`redacaoSwipeWindowSwipes_${user.id}`, '0');
+            userDataService.saveFreeLimitReset(user.id, null);
+          } else {
+            setFreeLimitResetAt(progress.freeLimitResetAt);
+          }
+        } else {
+          setFreeLimitResetAt(null);
+        }
+      }
+
       if (saved) setSavedCardIds(saved);
       if (reviews) setUserReviews(reviews);
     } catch (err) {
@@ -207,8 +253,44 @@ export default function App() {
     }
   };
 
-  // Processa Swipe / Classificação do card
+  // Processa Swipe / Classificação do card com Guard de Paywall e Limite Diário
   const handleSwipeAction = (action, card, trailId) => {
+    // 1. Guard para usuários do plano Free
+    if (!isPremium) {
+      const now = new Date();
+
+      // Se já estiver bloqueado pelo limite de 24h
+      if (freeLimitResetAt && now < new Date(freeLimitResetAt)) {
+        setShowPaywall(true);
+        return false;
+      }
+
+      // Se a janela de 24h expirou, reseta a contagem
+      let currentCount = freeSwipesInWindow;
+      if (freeLimitResetAt && now >= new Date(freeLimitResetAt)) {
+        currentCount = 0;
+        setFreeLimitResetAt(null);
+        if (user?.id) {
+          userDataService.saveFreeLimitReset(user.id, null);
+        }
+      }
+
+      const nextWindowCount = currentCount + 1;
+      setFreeSwipesInWindow(nextWindowCount);
+      if (user?.id) {
+        localStorage.setItem(`redacaoSwipeWindowSwipes_${user.id}`, nextWindowCount.toString());
+      }
+
+      // Ao atingir o 10º swipe do pacote gratuito, agenda o bloqueio de 24h
+      if (nextWindowCount >= 10) {
+        const resetDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        setFreeLimitResetAt(resetDate);
+        if (user?.id) {
+          userDataService.saveFreeLimitReset(user.id, resetDate);
+        }
+      }
+    }
+
     if (action === 'dominei') {
       setSessionStats((s) => ({ ...s, domino: s.domino + 1 }));
     } else if (action === 'revisar') {
@@ -236,6 +318,8 @@ export default function App() {
     if (nextCount >= dailyGoal) {
       navigate('/concluido');
     }
+
+    return true;
   };
 
   // Salva nova meta diária
@@ -264,7 +348,8 @@ export default function App() {
   const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Estudante';
 
   return (
-    <Routes>
+    <>
+      <Routes>
       {/* Rota Pública de Login / Cadastro */}
       <Route
         path="/login"
@@ -426,5 +511,16 @@ export default function App() {
       {/* Fallback para rotas desconhecidas */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+
+    {/* Modal de Bloqueio e Paywall */}
+    <PaywallModal
+      isOpen={showPaywall}
+      freeLimitResetAt={freeLimitResetAt}
+      onClose={() => setShowPaywall(false)}
+      onUpgrade={() => {
+        alert('Em breve: Assinatura do plano Premium ilimitado!');
+      }}
+    />
+    </>
   );
 }
