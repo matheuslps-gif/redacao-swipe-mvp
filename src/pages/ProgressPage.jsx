@@ -1,26 +1,42 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { COMPETENCIES_METADATA } from '../services/progressAnalytics';
 
 export default function ProgressPage({
-  streak = 5,
-  stats = { domino: 118, revisar: 36, novos: 18 },
+  streak = 0,
+  stats = { domino: 0, revisar: 0, novos: 0, globalMasteryPercent: 0, totalCards: 0 },
+  totalStudied = 0,
+  competencies = [],
+  priorityCompetency = null,
+  initialFocus = 'C1',
+  onSaveInitialFocus,
   onOpenProfile,
   onStartStudy,
 }) {
-  const total = stats.domino + stats.revisar + stats.novos;
-  const masteryPercent = total > 0 ? Math.round((stats.domino / total) * 100) : 68;
+  const [selectedFocusKey, setSelectedFocusKey] = useState(initialFocus || 'C1');
+
+  const masteryPercent = stats.globalMasteryPercent || 0;
+  const total = stats.totalCards || (stats.domino + stats.revisar + stats.novos);
+  const studiedCount = totalStudied || (stats.domino + stats.revisar);
+  const isZeroState = studiedCount === 0;
 
   // Cálculo da circunferência para o anel SVG de raio 68
   const radius = 68;
   const circumference = 2 * Math.PI * radius; // ~427.25
   const strokeDashoffset = circumference - (circumference * masteryPercent) / 100;
 
-  const competencies = [
-    { name: 'Competência 1', label: 'Norma Culta & Gramática', score: '160/200', pct: 80, bar: 'bg-primary-container' },
-    { name: 'Competência 2', label: 'Compreensão & Repertório', score: '180/200', pct: 90, bar: 'bg-tertiary-container' },
-    { name: 'Competência 3', label: 'Projeto de Texto & Argumento', score: '160/200', pct: 80, bar: 'bg-primary-container' },
-    { name: 'Competência 4', label: 'Coesão & Conectivos', score: '140/200', pct: 70, bar: 'bg-primary-fixed-dim' },
-    { name: 'Competência 5', label: 'Proposta de Intervenção', score: '120/200', pct: 60, bar: 'bg-secondary-container', alert: true },
-  ];
+  // Nível de domínio do estudante
+  const userLevel = Math.max(1, Math.min(10, Math.floor(masteryPercent / 10) + 1));
+
+  // Competência selecionada no Zero State
+  const selectedFocusMeta =
+    COMPETENCIES_METADATA.find((c) => c.key === selectedFocusKey) || COMPETENCIES_METADATA[0];
+
+  const handleSelectFocus = (key) => {
+    setSelectedFocusKey(key);
+    if (onSaveInitialFocus) {
+      onSaveInitialFocus(key);
+    }
+  };
 
   return (
     <div className="bg-surface text-on-surface antialiased flex flex-col min-h-screen">
@@ -76,7 +92,7 @@ export default function ProgressPage({
                     local_fire_department
                   </span>
                   <span className="font-label-md text-label-md font-semibold text-secondary">
-                    {streak} dias
+                    {streak} {streak === 1 ? 'dia' : 'dias'}
                   </span>
                 </div>
                 <div className="flex items-center gap-1 bg-surface-container px-2.5 py-1 rounded-full text-on-surface-variant">
@@ -87,7 +103,7 @@ export default function ProgressPage({
                     bolt
                   </span>
                   <span className="font-label-md text-label-md font-semibold text-primary">
-                    Nível 4
+                    Nível {userLevel}
                   </span>
                 </div>
               </div>
@@ -128,16 +144,16 @@ export default function ProgressPage({
                   {masteryPercent}%
                 </span>
                 <span className="font-label-md text-label-md text-on-surface-variant mt-1 font-medium">
-                  {stats.domino} / {total} cards
+                  {stats.domino || 0} / {total} cards
                 </span>
               </div>
             </div>
 
-            {/* Trinca de Métricas */}
+            {/* Trinca de Métricas Reais */}
             <div className="w-full pt-3 flex items-center justify-around text-center">
               <div className="flex flex-col">
                 <span className="font-headline-sm text-headline-sm font-bold text-tertiary-container">
-                  {stats.domino}
+                  {stats.domino || 0}
                 </span>
                 <span className="font-label-badge text-label-badge text-on-surface-variant uppercase">
                   Dominados
@@ -146,7 +162,7 @@ export default function ProgressPage({
               <div className="w-px h-8 bg-surface-container" />
               <div className="flex flex-col">
                 <span className="font-headline-sm text-headline-sm font-bold text-secondary">
-                  {stats.revisar}
+                  {stats.revisar || 0}
                 </span>
                 <span className="font-label-badge text-label-badge text-on-surface-variant uppercase">
                   A Revisar
@@ -155,7 +171,7 @@ export default function ProgressPage({
               <div className="w-px h-8 bg-surface-container" />
               <div className="flex flex-col">
                 <span className="font-headline-sm text-headline-sm font-bold text-outline">
-                  {stats.novos}
+                  {stats.novos || 0}
                 </span>
                 <span className="font-label-badge text-label-badge text-on-surface-variant uppercase">
                   Novos
@@ -164,39 +180,110 @@ export default function ProgressPage({
             </div>
           </section>
 
-          {/* 2. Bloco Prioritário: Principal Ponto de Atenção */}
-          <section className="w-full bg-secondary-fixed/50 rounded-xl p-space-md shadow-sm relative overflow-hidden">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center shrink-0 text-on-secondary shadow-sm">
-                <span
-                  className="material-symbols-outlined text-[20px]"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  priority_high
-                </span>
+          {/* 2. Bloco Prioritário: Zero State (Novo Usuário) OU Estado Dinâmico (Com Histórico) */}
+          <section className="w-full bg-secondary-fixed/50 rounded-xl p-space-md shadow-sm relative overflow-hidden transition-all duration-300">
+            {isZeroState ? (
+              /* ZERO STATE: Onboarding / Definição de Foco Inicial */
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center shrink-0 text-on-secondary shadow-sm">
+                    <span
+                      className="material-symbols-outlined text-[20px]"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      flag
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="font-label-badge text-label-badge text-on-secondary-fixed-variant uppercase tracking-wider font-bold">
+                        Foco Inicial
+                      </span>
+                    </div>
+                    <h4 className="font-headline-sm text-headline-sm text-primary font-bold">
+                      Defina seu Foco Inicial
+                    </h4>
+                    <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                      Como você ainda não tem histórico, escolha qual competência deseja priorizar hoje:
+                    </p>
+                  </div>
+                </div>
+
+                {/* Seleção de Competências (C1 a C5) */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-1">
+                  {COMPETENCIES_METADATA.map((comp) => {
+                    const isSelected = selectedFocusKey === comp.key;
+                    return (
+                      <button
+                        key={comp.key}
+                        type="button"
+                        onClick={() => handleSelectFocus(comp.key)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-left flex items-center justify-between border ${
+                          isSelected
+                            ? 'bg-primary text-on-primary border-primary shadow-xs'
+                            : 'bg-surface-container-lowest/80 text-on-surface border-surface-container hover:bg-surface-container'
+                        }`}
+                      >
+                        <span className="truncate">{comp.shortName}</span>
+                        {isSelected && (
+                          <span className="material-symbols-outlined text-[14px] text-tertiary-fixed ml-1">
+                            check_circle
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-1 flex items-center justify-between">
+                  <span className="text-[12px] text-on-surface-variant italic truncate max-w-[240px]">
+                    Foco: {selectedFocusMeta.name} — {selectedFocusMeta.label}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-label-md text-label-md font-bold text-secondary flex items-center gap-1 cursor-pointer hover:underline"
+                    onClick={() => onStartStudy?.(selectedFocusMeta.trailId)}
+                  >
+                    Treinar agora
+                    <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  </button>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="font-label-badge text-label-badge text-on-secondary-fixed-variant uppercase tracking-wider font-bold">
-                    Atenção Prioritária
+            ) : (
+              /* ESTADO DINÂMICO: Usuário com histórico real */
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center shrink-0 text-on-secondary shadow-sm">
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    priority_high
                   </span>
                 </div>
-                <h4 className="font-headline-sm text-headline-sm text-primary font-bold">
-                  Competência 5: Detalhamento
-                </h4>
-                <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
-                  3 cards com repetição pendente para consolidar a nota máxima na intervenção.
-                </p>
-                <button
-                  type="button"
-                  className="mt-2 text-label-md text-label-md font-bold text-secondary flex items-center gap-1 cursor-pointer"
-                  onClick={onStartStudy}
-                >
-                  Treinar agora
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="font-label-badge text-label-badge text-on-secondary-fixed-variant uppercase tracking-wider font-bold">
+                      Atenção Prioritária
+                    </span>
+                  </div>
+                  <h4 className="font-headline-sm text-headline-sm text-primary font-bold">
+                    {priorityCompetency?.name}: {priorityCompetency?.label}
+                  </h4>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                    {priorityCompetency?.detail ||
+                      'Treine os cards desta competência para acelerar sua pontuação.'}
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-2 text-label-md text-label-md font-bold text-secondary flex items-center gap-1 cursor-pointer hover:underline"
+                    onClick={() => onStartStudy?.(priorityCompetency?.trailId)}
+                  >
+                    Treinar agora
+                    <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </section>
 
           {/* 3. Breakdown por Competência */}

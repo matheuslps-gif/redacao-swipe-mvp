@@ -1,8 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { flashcardsData } from './data/flashcardsData';
 import useFlashcards from './hooks/useFlashcards';
 import useGamification from './hooks/useGamification';
+import { useAuth } from './contexts/AuthContext';
+import { userDataService } from './services/userDataService';
+import { calculateUserAnalytics, TRAILS_METADATA, COMPETENCIES_METADATA } from './services/progressAnalytics';
 
+import ProtectedRoute from './components/ProtectedRoute';
 import BottomNavigation from './components/BottomNavigation';
 import Home from './pages/Home';
 import StudySession from './pages/StudySession';
@@ -13,33 +18,83 @@ import ProfilePage from './pages/ProfilePage';
 import DailyGoalModal from './pages/DailyGoalModal';
 import Login from './pages/Login';
 
+// Layout que inclui a barra inferior de navegação
+function MainLayout({ children, activePath }) {
+  const navigate = useNavigate();
+
+  const handleNavigate = (path) => {
+    navigate(`/${path === 'hoje' ? '' : path}`);
+  };
+
+  return (
+    <div className="w-full min-h-screen bg-surface font-body-md text-body-md text-on-surface antialiased">
+      {children}
+      <BottomNavigation activePath={activePath} onNavigate={handleNavigate} />
+    </div>
+  );
+}
+
+// Wrapper para a tela de estudo recebendo trailId via rota
+function StudySessionRoute({
+  dailyGoal,
+  savedCardIds,
+  onToggleSaveCard,
+  onSwipeAction,
+  onOpenProfile,
+}) {
+  const { trailId: paramTrailId } = useParams();
+  const navigate = useNavigate();
+  const selectedTrail = paramTrailId || 'fundamentos';
+
+  const {
+    currentCard,
+    isTrailFinished,
+    progress,
+    totalCards,
+    currentIndex,
+  } = useFlashcards(flashcardsData, selectedTrail);
+
+  const isCurrentSaved = currentCard ? savedCardIds.includes(currentCard.id) : false;
+
+  useEffect(() => {
+    if (isTrailFinished) {
+      navigate('/concluido');
+    }
+  }, [isTrailFinished, navigate]);
+
+  return (
+    <StudySession
+      trailName={currentCard?.trailName || 'Fundamentos'}
+      currentCard={currentCard}
+      currentIndex={currentIndex}
+      totalCards={totalCards || dailyGoal}
+      progress={progress}
+      isSaved={isCurrentSaved}
+      onSwipe={(action) => onSwipeAction(action, currentCard, selectedTrail)}
+      onToggleSave={onToggleSaveCard}
+      onClose={() => navigate('/')}
+      onOpenProfile={onOpenProfile}
+    />
+  );
+}
+
 export default function App() {
-  // Autenticação mock / estado de usuário
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('redacaoSwipeUser');
-    return saved ? JSON.parse(saved) : { name: 'Lucas', email: 'lucas@exemplo.com' };
-  });
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
 
-  // Meta diária (5, 10, 15, 20 cards)
-  const [dailyGoal, setDailyGoal] = useState(() => {
-    const saved = localStorage.getItem('redacaoSwipeDailyGoal');
-    return saved ? parseInt(saved, 10) : 10;
-  });
+  // Meta diária isolada por usuário (padrão: 10)
+  const [dailyGoal, setDailyGoal] = useState(10);
 
-  // Cards salvos / favoritos
-  const [savedCardIds, setSavedCardIds] = useState(() => {
-    const saved = localStorage.getItem('redacaoSwipeSavedCards');
-    return saved ? JSON.parse(saved) : ['fund-01', 'fund-02', 'intro-01'];
-  });
+  // Foco inicial escolhido no Zero State (ex: 'C1')
+  const [initialFocus, setInitialFocus] = useState('C1');
 
-  // Trilha de estudo selecionada
-  const [selectedTrailId, setSelectedTrailId] = useState('fundamentos');
+  // Cards salvos isolados por usuário (novo usuário começa vazio [])
+  const [savedCardIds, setSavedCardIds] = useState([]);
 
-  // Navegação de abas e telas ('hoje' | 'cards' | 'progresso' | 'perfil' | 'study' | 'completed' | 'goal_setup' | 'login')
-  const [activeTab, setActiveTab] = useState('hoje');
-  const [currentScreen, setCurrentScreen] = useState('main'); // 'main' | 'study' | 'completed' | 'goal_setup' | 'login'
+  // Histórico de reviews/swipes do usuário no Supabase
+  const [userReviews, setUserReviews] = useState([]);
 
-  // Estatísticas da rodada diária
+  // Estatísticas da rodada diária atual
   const [sessionStats, setSessionStats] = useState({
     domino: 0,
     revisar: 0,
@@ -48,228 +103,279 @@ export default function App() {
 
   const [studiedCount, setStudiedCount] = useState(0);
 
-  // Hook de Gamificação (Streak / Ofensiva diária via localStorage)
-  const { streak, updateStreak } = useGamification();
+  // Hook de Gamificação com isolamento por usuário
+  const { streak, updateStreak } = useGamification(user?.id);
 
-  // Hook de Flashcards (Fisher-Yates shuffle, avanço e card atual)
-  const {
-    currentCard,
-    nextCard,
-    isTrailFinished,
-    progress,
-    totalCards,
-    currentIndex,
-  } = useFlashcards(flashcardsData, selectedTrailId);
+  // Carrega preferências e histórico real do usuário
+  const loadUserData = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [progress, saved, reviews] = await Promise.all([
+        userDataService.getUserProgress(user.id),
+        userDataService.getSavedCards(user.id),
+        userDataService.getUserReviews(user.id),
+      ]);
 
-  // Salva cards favoritos no localStorage
-  useEffect(() => {
-    localStorage.setItem('redacaoSwipeSavedCards', JSON.stringify(savedCardIds));
-  }, [savedCardIds]);
-
-  // Salva meta no localStorage
-  useEffect(() => {
-    localStorage.setItem('redacaoSwipeDailyGoal', dailyGoal.toString());
-  }, [dailyGoal]);
-
-  // Monitora se a rodada/trilha foi finalizada
-  useEffect(() => {
-    if (isTrailFinished && currentScreen === 'study') {
-      updateStreak();
-      setCurrentScreen('completed');
+      if (progress?.dailyGoal) setDailyGoal(progress.dailyGoal);
+      if (progress?.initialFocus) setInitialFocus(progress.initialFocus);
+      if (saved) setSavedCardIds(saved);
+      if (reviews) setUserReviews(reviews);
+    } catch (err) {
+      console.warn('Erro ao carregar dados do usuário:', err);
     }
-  }, [isTrailFinished, currentScreen, updateStreak]);
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadUserData();
+  }, [loadUserData]);
+
+  // Cálculo reativo de métricas e analytics a partir dos reviews reais
+  const analytics = useMemo(() => {
+    return calculateUserAnalytics(userReviews);
+  }, [userReviews]);
+
+  // Trilha ativa sugerida (com base no menor domínio iniciado, foco inicial ou primeira trilha)
+  const activeTrail = useMemo(() => {
+    const inProgress = analytics.trails.find((t) => t.mastery > 0 && t.mastery < 100);
+    if (inProgress) return inProgress;
+
+    if (initialFocus) {
+      const focusComp = COMPETENCIES_METADATA.find((c) => c.key === initialFocus);
+      if (focusComp) {
+        const matchingTrail = analytics.trails.find((t) => t.id === focusComp.trailId);
+        if (matchingTrail) return matchingTrail;
+      }
+    }
+
+    return analytics.trails[0] || TRAILS_METADATA[0];
+  }, [analytics.trails, initialFocus]);
 
   // Toggle de salvar card
   const handleToggleSaveCard = (cardId) => {
-    setSavedCardIds((prev) => {
-      const isAlreadySaved = prev.includes(cardId);
-      if (isAlreadySaved) {
-        return prev.filter((id) => id !== cardId);
-      } else {
-        setSessionStats((s) => ({ ...s, salvo: s.salvo + 1 }));
-        return [...prev, cardId];
-      }
-    });
+    if (!cardId) return;
+    const isCurrentlySaved = savedCardIds.includes(cardId);
+    if (!isCurrentlySaved) {
+      setSessionStats((s) => ({ ...s, salvo: s.salvo + 1 }));
+    }
+
+    setSavedCardIds((prev) =>
+      isCurrentlySaved ? prev.filter((id) => id !== cardId) : [...prev, cardId]
+    );
+
+    if (user?.id) {
+      userDataService.toggleSavedCard(user.id, cardId, isCurrentlySaved);
+    }
   };
 
   // Processa Swipe / Classificação do card
-  const handleSwipeAction = (action) => {
+  const handleSwipeAction = (action, card, trailId) => {
     if (action === 'dominei') {
       setSessionStats((s) => ({ ...s, domino: s.domino + 1 }));
     } else if (action === 'revisar') {
       setSessionStats((s) => ({ ...s, revisar: s.revisar + 1 }));
     }
 
+    if (user?.id && card?.id) {
+      userDataService.recordCardReview(user.id, card.id, trailId, action);
+      // Atualiza reativamente os reviews no estado
+      setUserReviews((prev) => [
+        ...prev,
+        { card_id: card.id, trail_id: trailId, action, created_at: new Date().toISOString() },
+      ]);
+    }
+
     const nextCount = studiedCount + 1;
     setStudiedCount(nextCount);
 
-    // Se bateu a meta diária e terminou a rodada
-    if (nextCount >= dailyGoal && currentIndex >= totalCards - 1) {
+    if (nextCount >= dailyGoal) {
       updateStreak();
-      setCurrentScreen('completed');
-    } else {
-      nextCard();
+      navigate('/concluido');
     }
-  };
-
-  // Inicia sessão de estudo em uma trilha
-  const handleStartStudy = (trailId) => {
-    if (trailId && typeof trailId === 'string') {
-      setSelectedTrailId(trailId);
-    }
-    setCurrentScreen('study');
-  };
-
-  // Navegação entre abas
-  const handleNavigateTab = (tab) => {
-    setActiveTab(tab);
-    setCurrentScreen('main');
   };
 
   // Salva nova meta diária
   const handleSaveDailyGoal = (newGoal) => {
     setDailyGoal(newGoal);
-    setCurrentScreen('main');
+    if (user?.id) {
+      userDataService.saveDailyGoal(user.id, newGoal);
+    }
+    navigate('/');
   };
 
-  // Logout
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('redacaoSwipeUser');
-    setCurrentScreen('login');
+  // Salva foco inicial escolhido no Zero State
+  const handleSaveInitialFocus = (focusKey) => {
+    setInitialFocus(focusKey);
+    if (user?.id) {
+      userDataService.saveInitialFocus(user.id, focusKey);
+    }
   };
 
-  // Se não houver usuário logado e estiver na tela de login
-  if (currentScreen === 'login') {
-    return (
-      <Login
-        onBack={() => setCurrentScreen('main')}
-        onGoogle={() => {
-          const defaultUser = { name: 'Lucas', email: 'lucas@exemplo.com' };
-          setUser(defaultUser);
-          localStorage.setItem('redacaoSwipeUser', JSON.stringify(defaultUser));
-          setCurrentScreen('main');
-        }}
-        onSubmit={({ name, email }) => {
-          const loggedUser = { name: name || 'Lucas', email: email || 'lucas@exemplo.com' };
-          setUser(loggedUser);
-          localStorage.setItem('redacaoSwipeUser', JSON.stringify(loggedUser));
-          setCurrentScreen('main');
-        }}
-        onForgotPassword={() => alert('Instruções de recuperação enviadas para o seu e-mail.')}
-      />
-    );
-  }
+  // Logout seguro
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/login');
+  };
 
-  // Tela de Seleção de Meta Diária (Tela 02)
-  if (currentScreen === 'goal_setup') {
-    return (
-      <DailyGoalModal
-        currentGoal={dailyGoal}
-        onSaveGoal={handleSaveDailyGoal}
-        onBack={() => setCurrentScreen('main')}
-      />
-    );
-  }
+  const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Estudante';
 
-  // Tela de Sessão Interativa de Flashcards (Telas 05, 06, 07, 08)
-  if (currentScreen === 'study') {
-    const isCurrentSaved = currentCard ? savedCardIds.includes(currentCard.id) : false;
-    return (
-      <StudySession
-        trailId={selectedTrailId}
-        trailName={currentCard?.trailName || 'Fundamentos'}
-        currentCard={currentCard}
-        currentIndex={currentIndex}
-        totalCards={totalCards || dailyGoal}
-        progress={progress}
-        isSaved={isCurrentSaved}
-        onSwipe={handleSwipeAction}
-        onToggleSave={handleToggleSaveCard}
-        onClose={() => setCurrentScreen('main')}
-        onOpenProfile={() => {
-          setActiveTab('perfil');
-          setCurrentScreen('main');
-        }}
-      />
-    );
-  }
-
-  // Tela de Sessão Finalizada / Meta Concluída (Tela 10)
-  if (currentScreen === 'completed') {
-    return (
-      <SessionCompleted
-        streak={streak}
-        stats={sessionStats}
-        totalStudied={studiedCount}
-        onContinueStudying={() => {
-          setSelectedTrailId('argumentacao');
-          setCurrentScreen('study');
-        }}
-        onBackToHome={() => {
-          setActiveTab('hoje');
-          setCurrentScreen('main');
-        }}
-      />
-    );
-  }
-
-  // Conteúdo Principal com Tabs
   return (
-    <div className="w-full min-h-screen bg-surface">
-      {activeTab === 'hoje' && (
-        <Home
-          userName={user?.name || 'Lucas'}
-          streak={streak}
-          dailyGoal={dailyGoal}
-          studiedCount={studiedCount}
-          stats={sessionStats}
-          onStartStudy={() => handleStartStudy(selectedTrailId)}
-          onNavigate={handleNavigateTab}
-          onOpenProfile={() => setActiveTab('perfil')}
-        />
-      )}
+    <Routes>
+      {/* Rota Pública de Login / Cadastro */}
+      <Route
+        path="/login"
+        element={user ? <Navigate to="/" replace /> : <Login onBack={() => navigate('/')} />}
+      />
 
-      {activeTab === 'cards' && (
-        <CardsLibrary
-          savedCardIds={savedCardIds}
-          onSelectTrail={(trailId) => handleStartStudy(trailId)}
-          onToggleSaveCard={handleToggleSaveCard}
-          onStartReviewSaved={() => {
-            if (savedCardIds.length > 0) {
-              handleStartStudy(selectedTrailId);
-            }
-          }}
-          onOpenProfile={() => setActiveTab('perfil')}
+      {/* Rotas Protegidas (Exigem Sessão Ativa) */}
+      <Route element={<ProtectedRoute />}>
+        {/* Aba Hoje (Home) com Métricas Reais */}
+        <Route
+          path="/"
+          element={
+            <MainLayout activePath="hoje">
+              <Home
+                userName={userName}
+                streak={streak}
+                dailyGoal={dailyGoal}
+                studiedCount={studiedCount}
+                enemScore={analytics.enemScore}
+                revisarCount={analytics.revisarCount}
+                stats={sessionStats}
+                activeTrail={activeTrail}
+                onStartStudy={() => navigate(`/estudo/${activeTrail?.id || 'fundamentos'}`)}
+                onNavigate={(tab) => navigate(`/${tab === 'hoje' ? '' : tab}`)}
+                onOpenProfile={() => navigate('/perfil')}
+              />
+            </MainLayout>
+          }
         />
-      )}
 
-      {activeTab === 'progresso' && (
-        <ProgressPage
-          streak={streak}
-          stats={{
-            domino: Math.max(118, sessionStats.domino),
-            revisar: Math.max(36, sessionStats.revisar),
-            novos: 18,
-          }}
-          onOpenProfile={() => setActiveTab('perfil')}
-          onStartStudy={() => handleStartStudy(selectedTrailId)}
+        <Route
+          path="/hoje"
+          element={<Navigate to="/" replace />}
         />
-      )}
 
-      {activeTab === 'perfil' && (
-        <ProfilePage
-          userName={user?.name || 'Lucas'}
-          streak={streak}
-          dailyGoal={dailyGoal}
-          savedCount={savedCardIds.length}
-          onChangeGoal={() => setCurrentScreen('goal_setup')}
-          onLogout={handleLogout}
+        {/* Aba Cards (Biblioteca com Métricas Reais de Trilhas e Cards Salvos) */}
+        <Route
+          path="/cards"
+          element={
+            <MainLayout activePath="cards">
+              <CardsLibrary
+                trails={analytics.trails}
+                savedCardIds={savedCardIds}
+                passingTrailsCount={analytics.passingTrailsCount}
+                onSelectTrail={(trailId) => navigate(`/estudo/${trailId}`)}
+                onToggleSaveCard={handleToggleSaveCard}
+                onStartReviewSaved={() => {
+                  if (savedCardIds.length > 0) navigate('/estudo/fundamentos');
+                }}
+                onOpenProfile={() => navigate('/perfil')}
+              />
+            </MainLayout>
+          }
         />
-      )}
 
-      {/* Bottom Navigation global para as 4 tabs principais */}
-      <BottomNavigation activePath={activeTab} onNavigate={handleNavigateTab} />
-    </div>
+        {/* Aba Progresso com Anel e Competências Dinâmicas */}
+        <Route
+          path="/progresso"
+          element={
+            <MainLayout activePath="progresso">
+              <ProgressPage
+                streak={streak}
+                stats={{
+                  domino: analytics.dominoCount,
+                  revisar: analytics.revisarCount,
+                  novos: analytics.novosCount,
+                  globalMasteryPercent: analytics.globalMasteryPercent,
+                  totalCards: analytics.totalCardsGlobal,
+                }}
+                totalStudied={analytics.totalStudied}
+                competencies={analytics.competencies}
+                priorityCompetency={analytics.priorityCompetency}
+                initialFocus={initialFocus}
+                onSaveInitialFocus={handleSaveInitialFocus}
+                onOpenProfile={() => navigate('/perfil')}
+                onStartStudy={(trailId) =>
+                  navigate(`/estudo/${trailId || activeTrail?.id || 'fundamentos'}`)
+                }
+              />
+            </MainLayout>
+          }
+        />
+
+        {/* Aba Perfil com Dados Reais */}
+        <Route
+          path="/perfil"
+          element={
+            <MainLayout activePath="perfil">
+              <ProfilePage
+                userName={userName}
+                streak={streak}
+                dailyGoal={dailyGoal}
+                savedCount={savedCardIds.length}
+                onChangeGoal={() => navigate('/meta-diaria')}
+                onLogout={handleLogout}
+              />
+            </MainLayout>
+          }
+        />
+
+        {/* Tela de Estudo / Sessão de Flashcards */}
+        <Route
+          path="/estudo"
+          element={
+            <StudySessionRoute
+              dailyGoal={dailyGoal}
+              savedCardIds={savedCardIds}
+              onToggleSaveCard={handleToggleSaveCard}
+              onSwipeAction={handleSwipeAction}
+              onOpenProfile={() => navigate('/perfil')}
+            />
+          }
+        />
+
+        <Route
+          path="/estudo/:trailId"
+          element={
+            <StudySessionRoute
+              dailyGoal={dailyGoal}
+              savedCardIds={savedCardIds}
+              onToggleSaveCard={handleToggleSaveCard}
+              onSwipeAction={handleSwipeAction}
+              onOpenProfile={() => navigate('/perfil')}
+            />
+          }
+        />
+
+        {/* Tela de Meta Concluída */}
+        <Route
+          path="/concluido"
+          element={
+            <SessionCompleted
+              streak={streak}
+              stats={sessionStats}
+              totalStudied={studiedCount}
+              onContinueStudying={() => navigate('/estudo/argumentacao')}
+              onBackToHome={() => navigate('/')}
+            />
+          }
+        />
+
+        {/* Tela de Configuração de Meta Diária */}
+        <Route
+          path="/meta-diaria"
+          element={
+            <DailyGoalModal
+              currentGoal={dailyGoal}
+              onSaveGoal={handleSaveDailyGoal}
+              onBack={() => navigate(-1)}
+            />
+          }
+        />
+      </Route>
+
+      {/* Fallback para rotas desconhecidas */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

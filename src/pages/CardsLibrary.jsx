@@ -1,102 +1,11 @@
 import React, { useState } from 'react';
 import { flashcardsData } from '../data/flashcardsData';
-
-// Configuração visual pedagógica das 7 trilhas ENEM
-const trailsConfig = [
-  {
-    id: 'fundamentos',
-    number: 1,
-    name: 'Fundamentos',
-    subtitle: '18 cards · Estrutura ENEM',
-    tag: 'Consolidado',
-    tagClass: 'bg-tertiary-fixed/40 text-on-tertiary-fixed-variant',
-    mastery: 92,
-    barColor: 'bg-tertiary-container',
-    numColor: 'bg-tertiary-fixed/30 text-on-tertiary-fixed-variant',
-    icon: 'verified',
-    iconColor: 'text-on-tertiary-fixed-variant',
-  },
-  {
-    id: 'introducao',
-    number: 2,
-    name: 'Introdução',
-    subtitle: '24 cards · Contexto & Tese',
-    tag: null,
-    mastery: 82,
-    barColor: 'bg-primary-container',
-    numColor: 'bg-primary-fixed/40 text-on-primary-fixed-variant',
-    icon: 'check_circle',
-    iconColor: 'text-primary',
-  },
-  {
-    id: 'argumentacao',
-    number: 3,
-    name: 'Argumentação',
-    subtitle: '32 cards · Estratégia dissertativa',
-    tag: 'Em progresso',
-    tagClass: 'bg-surface-container text-on-surface-variant',
-    mastery: 63,
-    barColor: 'bg-primary-container',
-    numColor: 'bg-primary-fixed/40 text-on-primary-fixed-variant',
-    icon: 'trending_up',
-    iconColor: 'text-on-surface-variant',
-  },
-  {
-    id: 'repertorio',
-    number: 4,
-    name: 'Repertório',
-    subtitle: '28 cards · Legitimado & Produtivo',
-    tag: null,
-    mastery: 71,
-    barColor: 'bg-primary-container',
-    numColor: 'bg-primary-fixed/40 text-on-primary-fixed-variant',
-    icon: 'history_edu',
-    iconColor: 'text-on-surface-variant',
-  },
-  {
-    id: 'coesao',
-    number: 5,
-    name: 'Coesão',
-    subtitle: '20 cards · Conectivos inter e intra',
-    tag: null,
-    mastery: 58,
-    barColor: 'bg-primary-container',
-    numColor: 'bg-primary-fixed/40 text-on-primary-fixed-variant',
-    icon: 'link',
-    iconColor: 'text-on-surface-variant',
-  },
-  {
-    id: 'proposta',
-    number: 6,
-    name: 'Proposta de Intervenção',
-    subtitle: '26 cards · 5 elementos obrigatórios',
-    tag: 'Ponto de atenção',
-    tagClass: 'bg-secondary-fixed text-on-secondary-fixed-variant',
-    tagIcon: 'priority_high',
-    mastery: 44,
-    barColor: 'bg-secondary-container',
-    numColor: 'bg-secondary-fixed text-on-secondary-fixed-variant',
-    icon: 'warning',
-    iconColor: 'text-secondary',
-    highlightContainer: 'bg-secondary-fixed/20',
-  },
-  {
-    id: 'conclusao',
-    number: 7,
-    name: 'Conclusão',
-    subtitle: '14 cards · Retomada de tese',
-    tag: 'Não iniciado',
-    tagClass: 'bg-surface-container text-on-surface-variant',
-    mastery: 0,
-    barColor: 'bg-outline-variant',
-    numColor: 'bg-surface-container text-on-surface-variant',
-    icon: 'play_circle',
-    iconColor: 'text-outline',
-  },
-];
+import { TRAILS_METADATA } from '../services/progressAnalytics';
 
 export default function CardsLibrary({
+  trails = TRAILS_METADATA,
   savedCardIds = [],
+  passingTrailsCount = 0,
   onSelectTrail,
   onToggleSaveCard,
   onStartReviewSaved,
@@ -106,7 +15,7 @@ export default function CardsLibrary({
   const [toastMessage, setToastMessage] = useState(null);
   const [isWiggling, setIsWiggling] = useState(false);
 
-  // Filtra cards salvos pelo array de IDs
+  // Filtra cards salvos pelo array de IDs reais do usuário
   const savedCards = flashcardsData.filter((card) => savedCardIds.includes(card.id));
 
   const showToast = (msg) => {
@@ -126,6 +35,9 @@ export default function CardsLibrary({
     setIsWiggling(true);
     setTimeout(() => setIsWiggling(false), 400);
   };
+
+  // Trilha sugerida para o botão de ação (primeira não finalizada ou a primeira da lista)
+  const suggestedTrail = trails.find((t) => (t.mastery || 0) < 100) || trails[0];
 
   return (
     <div className="bg-surface text-on-surface antialiased flex flex-col min-h-screen">
@@ -217,7 +129,7 @@ export default function CardsLibrary({
           {/* ABA TRILHAS (Tela 11) */}
           {activeTab === 'trilhas' && (
             <div className="flex flex-col gap-3 animate-fade-in" id="content-trilhas">
-              {/* Motivational Banner */}
+              {/* Motivational Banner Dinâmico */}
               <div className="mb-2 p-3.5 bg-primary-container rounded-2xl flex items-center gap-3 text-on-primary shadow-sm relative overflow-hidden">
                 <div className="w-9 h-9 rounded-xl bg-on-primary-container/20 flex items-center justify-center flex-shrink-0">
                   <span className="material-symbols-outlined text-primary-fixed text-[20px]">
@@ -229,7 +141,9 @@ export default function CardsLibrary({
                     Mastery ENEM 2026
                   </p>
                   <p className="font-body-sm text-body-sm text-on-primary-container opacity-90 truncate">
-                    5 de 7 trilhas em ritmo de aprovação (Nota 900+)
+                    {passingTrailsCount > 0
+                      ? `${passingTrailsCount} de 7 trilhas em ritmo de aprovação (Nota 900+)`
+                      : 'Comece sua primeira trilha rumo à Nota 1000!'}
                   </p>
                 </div>
                 <div className="flex items-center text-primary-fixed pl-1">
@@ -237,97 +151,101 @@ export default function CardsLibrary({
                 </div>
               </div>
 
-              {/* Lista das 7 Trilhas */}
-              {trailsConfig.map((t) => (
-                <div
-                  key={t.id}
-                  className="group relative flex flex-col p-4 bg-surface-container-lowest rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 active:scale-[0.99] text-left cursor-pointer"
-                  onClick={() => onSelectTrail?.(t.id)}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center font-headline-sm text-headline-sm font-bold flex-shrink-0 ${t.numColor}`}
-                      >
-                        {t.number}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h2 className="font-headline-sm text-headline-sm text-on-surface font-bold">
-                            {t.name}
-                          </h2>
-                          {t.tag && (
-                            <span
-                              className={`px-2 py-0.5 rounded-full font-label-badge text-label-badge uppercase flex items-center gap-1 ${t.tagClass}`}
-                            >
-                              {t.tagIcon && (
-                                <span className="material-symbols-outlined text-[11px]">
-                                  {t.tagIcon}
-                                </span>
-                              )}
-                              {t.tag}
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
-                          {t.subtitle}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors text-[22px] mt-1">
-                      chevron_right
-                    </span>
-                  </div>
-
+              {/* Lista das 7 Trilhas Reais */}
+              {trails.map((t) => {
+                const masteryValue = t.mastery || 0;
+                return (
                   <div
-                    className={`mt-3.5 pt-3 flex items-center justify-between gap-3 rounded-xl p-2.5 ${
-                      t.highlightContainer || 'bg-surface-container-low/60'
-                    }`}
+                    key={t.id}
+                    className="group relative flex flex-col p-4 bg-surface-container-lowest rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 active:scale-[0.99] text-left cursor-pointer"
+                    onClick={() => onSelectTrail?.(t.id)}
                   >
-                    <div className="flex-1">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-label-md text-label-md text-on-surface-variant">
-                          Domínio da trilha
-                        </span>
-                        <span
-                          className={`font-label-md text-label-md font-bold ${
-                            t.mastery > 70
-                              ? 'text-on-tertiary-fixed-variant'
-                              : t.mastery > 0
-                              ? 'text-primary'
-                              : 'text-on-surface-variant'
-                          }`}
-                        >
-                          {t.mastery}%
-                        </span>
-                      </div>
-                      <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
                         <div
-                          className={`h-full rounded-full transition-all duration-500 ${t.barColor}`}
-                          style={{ width: `${t.mastery}%` }}
-                        />
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center font-headline-sm text-headline-sm font-bold flex-shrink-0 ${t.numColor}`}
+                        >
+                          {t.number}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="font-headline-sm text-headline-sm text-on-surface font-bold">
+                              {t.name}
+                            </h2>
+                            {t.tag && (
+                              <span
+                                className={`px-2 py-0.5 rounded-full font-label-badge text-label-badge uppercase flex items-center gap-1 ${t.tagClass}`}
+                              >
+                                {t.tagIcon && (
+                                  <span className="material-symbols-outlined text-[11px]">
+                                    {t.tagIcon}
+                                  </span>
+                                )}
+                                {t.tag}
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                            {t.subtitle}
+                          </p>
+                        </div>
                       </div>
+                      <span className="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors text-[22px] mt-1">
+                        chevron_right
+                      </span>
                     </div>
-                    <div className={`flex items-center gap-1 ${t.iconColor}`}>
-                      <span className="material-symbols-outlined text-[18px]">{t.icon}</span>
+
+                    <div
+                      className={`mt-3.5 pt-3 flex items-center justify-between gap-3 rounded-xl p-2.5 ${
+                        t.highlightContainer || 'bg-surface-container-low/60'
+                      }`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-label-md text-label-md text-on-surface-variant">
+                            Domínio da trilha
+                          </span>
+                          <span
+                            className={`font-label-md text-label-md font-bold ${
+                              masteryValue > 70
+                                ? 'text-on-tertiary-fixed-variant'
+                                : masteryValue > 0
+                                ? 'text-primary'
+                                : 'text-on-surface-variant'
+                            }`}
+                          >
+                            {masteryValue}%
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${t.barColor}`}
+                            style={{ width: `${masteryValue}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className={`flex items-center gap-1 ${t.iconColor}`}>
+                        <span className="material-symbols-outlined text-[18px]">{t.icon}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
-              {/* Botão de Estudo Rápido */}
+              {/* Botão de Estudo Rápido Dinâmico */}
               <div className="mt-4 flex flex-col items-center">
                 <button
                   type="button"
                   className="w-full py-3.5 px-6 bg-secondary-container text-on-secondary rounded-2xl font-label-lg text-label-lg shadow-md hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  onClick={() => onSelectTrail?.('argumentacao')}
+                  onClick={() => onSelectTrail?.(suggestedTrail?.id || 'fundamentos')}
                 >
                   <span className="material-symbols-outlined text-[20px]">play_arrow</span>
-                  <span>Continuar Trilha: Argumentação</span>
+                  <span>
+                    {(suggestedTrail?.mastery || 0) > 0
+                      ? `Continuar Trilha: ${suggestedTrail?.name}`
+                      : `Iniciar Trilha: ${suggestedTrail?.name}`}
+                  </span>
                 </button>
-                <p className="font-label-md text-label-md text-on-surface-variant mt-2 text-center">
-                  Faltam cards para a meta do dia
-                </p>
               </div>
             </div>
           )}
@@ -336,7 +254,7 @@ export default function CardsLibrary({
           {activeTab === 'salvos' && (
             <div className="flex flex-col gap-3.5 animate-fade-in" id="content-salvos">
               {savedCards.length > 0 ? (
-                /* Tela 12 — Biblioteca com Cards Salvos */
+                /* Tela 12 — Biblioteca com Cards Salvos Reais */
                 <>
                   <div className="flex items-center justify-between px-1 mb-1">
                     <div className="flex items-center gap-1.5">
@@ -433,7 +351,7 @@ export default function CardsLibrary({
                   </div>
                 </>
               ) : (
-                /* Tela 13 — Salvos Vazios (Empty State) */
+                /* Tela 13 — Salvos Vazios (Empty State Padrão para Novos Usuários) */
                 <div className="flex flex-col items-center justify-center text-center px-4 py-8 mt-2">
                   <div
                     className="relative flex items-center justify-center mb-6 group cursor-pointer"

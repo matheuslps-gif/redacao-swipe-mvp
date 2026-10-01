@@ -2,13 +2,15 @@ import React from 'react';
 
 export default function Home({
   userName = 'Lucas',
-  streak = 5,
+  streak = 0,
   dailyGoal = 10,
   studiedCount = 0,
+  enemScore = 0,
+  revisarCount = 0,
   stats = { domino: 0, revisar: 0, salvo: 0 },
-  activeTrail = { id: 'proposta', name: 'Proposta de Intervenção', competency: 'Competência 5', description: 'Agente, ação, meio e efeito', mastery: 44 },
-  nextCardTitle = 'Articulação sintática no D1',
-  dateLabel = 'Terça-feira, 24 out',
+  activeTrail = { id: 'fundamentos', name: 'Fundamentos', competency: 'Estrutura Geral', description: 'Regras da banca e critérios de anulação', mastery: 0 },
+  nextCardTitle = 'Regras essenciais da redação ENEM',
+  dateLabel = 'Hoje',
   onStartStudy,
   onNavigate,
   onOpenProfile,
@@ -58,13 +60,17 @@ export default function Home({
               </h2>
             </div>
 
-            {isSessionInProgress ? (
+            {isSessionInProgress || streak > 0 ? (
               <div className="w-12 h-12 rounded-xl bg-surface-container-high flex items-center justify-center shadow-sm relative">
                 <span className="material-symbols-outlined text-secondary text-[26px]">
                   local_fire_department
                 </span>
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-secondary rounded-full animate-ping" />
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-secondary rounded-full" />
+                {streak > 0 && (
+                  <>
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-secondary rounded-full animate-ping" />
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-secondary rounded-full" />
+                  </>
+                )}
               </div>
             ) : (
               <div className="w-12 h-12 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center shadow-sm">
@@ -186,7 +192,7 @@ export default function Home({
             </section>
           )}
 
-          {/* Grid de Sequência & Domínio (Tela 03) */}
+          {/* Grid de Sequência & Domínio Dinâmico */}
           {!isSessionInProgress && (
             <div className="grid grid-cols-2 gap-space-sm">
               <div className="flex items-center gap-space-sm p-space-md rounded-xl bg-surface-container-low shadow-sm">
@@ -201,7 +207,7 @@ export default function Home({
                 <div className="flex flex-col min-w-0">
                   <span className="font-label-md text-label-md text-on-surface-variant">Sequência</span>
                   <span className="font-headline-sm text-headline-sm text-primary font-bold">
-                    {streak} dias
+                    {streak} {streak === 1 ? 'dia' : 'dias'}
                   </span>
                 </div>
               </div>
@@ -213,7 +219,7 @@ export default function Home({
                 <div className="flex flex-col min-w-0">
                   <span className="font-label-md text-label-md text-on-surface-variant">Domínio ENEM</span>
                   <span className="font-headline-sm text-headline-sm text-primary font-bold">
-                    780 pts
+                    {enemScore} pts
                   </span>
                 </div>
               </div>
@@ -249,8 +255,8 @@ export default function Home({
                 </div>
               </div>
               <div className="flex flex-col items-end shrink-0 pl-2">
-                <span className="font-label-lg text-label-lg text-secondary">
-                  {activeTrail.mastery}%
+                <span className="font-label-lg text-label-lg text-secondary font-bold">
+                  {activeTrail.mastery || 0}%
                 </span>
                 <span className="font-label-badge text-label-badge text-on-surface-variant uppercase">
                   domínio
@@ -276,7 +282,7 @@ export default function Home({
                   <div className="bg-surface-container-lowest rounded-xl p-space-sm shadow-sm flex flex-col items-center justify-center py-3.5 relative overflow-hidden">
                     <div className="w-2 h-2 rounded-full bg-tertiary-container absolute top-2 right-2" />
                     <span className="font-display-mobile text-[26px] leading-none text-tertiary-container font-extrabold">
-                      {stats.domino}
+                      {stats.domino || 0}
                     </span>
                     <span className="font-label-md text-label-md text-tertiary-container mt-1 font-semibold">
                       Domino
@@ -286,7 +292,7 @@ export default function Home({
                   <div className="bg-surface-container-lowest rounded-xl p-space-sm shadow-sm flex flex-col items-center justify-center py-3.5 relative overflow-hidden">
                     <div className="w-2 h-2 rounded-full bg-secondary absolute top-2 right-2" />
                     <span className="font-display-mobile text-[26px] leading-none text-secondary font-extrabold">
-                      {stats.revisar}
+                      {stats.revisar || 0}
                     </span>
                     <span className="font-label-md text-label-md text-secondary mt-1 font-semibold">
                       Revisar
@@ -296,7 +302,7 @@ export default function Home({
                   <div className="bg-surface-container-lowest rounded-xl p-space-sm shadow-sm flex flex-col items-center justify-center py-3.5 relative overflow-hidden">
                     <div className="w-2 h-2 rounded-full bg-primary-container absolute top-2 right-2" />
                     <span className="font-display-mobile text-[26px] leading-none text-primary-container font-extrabold">
-                      {stats.salvo}
+                      {stats.salvo || 0}
                     </span>
                     <span className="font-label-md text-label-md text-primary-container mt-1 font-semibold">
                       Salvo
@@ -340,16 +346,20 @@ export default function Home({
                     </span>
                   </div>
                   <span className="font-label-badge text-label-badge px-2 py-0.5 rounded-full bg-surface-container-highest text-secondary font-bold">
-                    3 cards
+                    {revisarCount} {revisarCount === 1 ? 'card' : 'cards'}
                   </span>
                 </div>
 
                 <div className="flex flex-col">
                   <h3 className="font-headline-sm text-headline-sm text-primary font-bold">
-                    3 cards aguardam revisão
+                    {revisarCount > 0
+                      ? `${revisarCount} cards aguardam revisão`
+                      : 'Nenhum card pendente de revisão'}
                   </h3>
                   <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">
-                    Revisitar consolida a memória de longo prazo antes que os conceitos comecem a desvanecer.
+                    {revisarCount > 0
+                      ? 'Revisitar consolida a memória de longo prazo antes que os conceitos comecem a desvanecer.'
+                      : 'Inicie uma sessão para estudar cards inéditos e desbloquear sua repetição espaçada.'}
                   </p>
                 </div>
 
@@ -370,7 +380,7 @@ export default function Home({
                     type="button"
                     onClick={() => onNavigate?.('cards')}
                   >
-                    Revisar agora
+                    {revisarCount > 0 ? 'Revisar agora' : 'Ver trilhas'}
                     <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                   </button>
                 </div>
