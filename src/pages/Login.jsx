@@ -2,12 +2,39 @@ import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
+function translateAuthError(message) {
+  if (!message) return "Ocorreu um erro. Tente novamente.";
+  const lower = message.toLowerCase();
+  if (lower.includes("invalid login credentials") || lower.includes("invalid_grant")) {
+    return "E-mail ou senha incorretos. Verifique suas credenciais.";
+  }
+  if (lower.includes("user already registered") || lower.includes("already registered")) {
+    return "Este e-mail já está cadastrado. Alterne para a aba 'Entrar'.";
+  }
+  if (lower.includes("password should be at least") || lower.includes("weak_password") || lower.includes("least 6")) {
+    return "A senha deve ter no mínimo 6 caracteres.";
+  }
+  if (lower.includes("rate limit") || lower.includes("too many requests")) {
+    return "Muitas tentativas em pouco tempo. Aguarde alguns instantes e tente novamente.";
+  }
+  if (lower.includes("email not confirmed")) {
+    return "Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada.";
+  }
+  if (lower.includes("failed to fetch") || lower.includes("network")) {
+    return "Falha na conexão com o servidor. Verifique sua internet.";
+  }
+  return message;
+}
+
 export default function Login({ onBack }) {
   const [mode, setMode] = useState("login");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const { signInWithPassword, signUp, signInWithGoogle, resetPassword } = useAuth();
   const navigate = useNavigate();
@@ -31,14 +58,14 @@ export default function Login({ onBack }) {
       if (isLogin) {
         const { error } = await signInWithPassword({ email, password });
         if (error) {
-          setErrorMessage(error.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : error.message);
+          setErrorMessage(translateAuthError(error.message));
         } else {
           navigate(redirectPath, { replace: true });
         }
       } else {
         const { error, data } = await signUp({ name, email, password });
         if (error) {
-          setErrorMessage(error.message);
+          setErrorMessage(translateAuthError(error.message));
         } else {
           if (data?.session) {
             navigate(redirectPath, { replace: true });
@@ -48,7 +75,7 @@ export default function Login({ onBack }) {
         }
       }
     } catch (err) {
-      setErrorMessage(err.message || "Ocorreu um erro ao processar sua solicitação.");
+      setErrorMessage(translateAuthError(err.message));
     } finally {
       setLoading(false);
     }
@@ -60,29 +87,34 @@ export default function Login({ onBack }) {
     try {
       const { error } = await signInWithGoogle();
       if (error) {
-        setErrorMessage(error.message);
+        setErrorMessage(translateAuthError(error.message));
       } else {
         navigate(redirectPath, { replace: true });
       }
     } catch (err) {
-      setErrorMessage(err.message || "Erro na autenticação com o Google.");
+      setErrorMessage(translateAuthError(err.message));
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleForgotPassword() {
-    const emailPrompt = window.prompt("Digite seu e-mail cadastrado para redefinir a senha:");
-    if (!emailPrompt) return;
+  async function handleSendResetPassword(e) {
+    e.preventDefault();
+    if (!forgotEmail) return;
+    setForgotLoading(true);
     try {
-      const { error } = await resetPassword(emailPrompt);
+      const { error } = await resetPassword(forgotEmail);
       if (error) {
-        alert(error.message);
+        setErrorMessage(translateAuthError(error.message));
       } else {
-        alert("E-mail de recuperação enviado com sucesso! Verifique sua caixa de entrada.");
+        setShowForgotModal(false);
+        setSuccessMessage("E-mail de recuperação enviado! Verifique sua caixa de entrada.");
+        setForgotEmail("");
       }
     } catch (err) {
-      alert(err.message || "Erro ao solicitar recuperação.");
+      setErrorMessage(translateAuthError(err.message));
+    } finally {
+      setForgotLoading(false);
     }
   }
 
@@ -175,11 +207,29 @@ export default function Login({ onBack }) {
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between">
               <label htmlFor="auth-password" className="font-label-badge text-label-badge text-on-surface-variant uppercase tracking-wider">Senha</label>
-              <button className={`font-body-sm text-body-sm text-secondary hover:underline cursor-pointer ${isLogin ? "" : "invisible"}`} type="button" onClick={handleForgotPassword}>Esqueci a senha</button>
+              <button
+                className={`font-body-sm text-body-sm text-secondary hover:underline cursor-pointer ${isLogin ? "" : "invisible"}`}
+                type="button"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                  setShowForgotModal(true);
+                }}
+              >
+                Esqueci a senha
+              </button>
             </div>
             <div className="flex items-center px-3.5 h-12 bg-surface-container-low rounded-xl focus-within:bg-surface-container-lowest transition-colors shadow-sm">
               <span className="material-symbols-outlined text-[20px] text-outline mr-2.5">lock</span>
-              <input id="auth-password" name="password" className="w-full bg-transparent font-body-md text-body-md text-on-surface outline-none placeholder:text-outline" placeholder="••••••••" required type={showPassword ? "text" : "password"} />
+              <input
+                id="auth-password"
+                name="password"
+                className="w-full bg-transparent font-body-md text-body-md text-on-surface outline-none placeholder:text-outline"
+                placeholder="••••••••"
+                required
+                minLength={6}
+                type={showPassword ? "text" : "password"}
+              />
               <button className="text-outline p-1 active:scale-90 transition-transform cursor-pointer" type="button" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"} onClick={() => setShowPassword(value => !value)}>
                 <span className="material-symbols-outlined text-[20px]">{showPassword ? "visibility_off" : "visibility"}</span>
               </button>
@@ -212,6 +262,50 @@ export default function Login({ onBack }) {
           <p className="font-body-sm text-body-sm text-outline px-4 text-[11px] leading-snug">Ao continuar, você concorda com os Termos de Uso e Política de Privacidade do Redação Swipe.</p>
         </div>
       </div>
+
+      {/* Modal de Recuperação de Senha */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="w-full max-w-[420px] bg-surface-container-lowest rounded-2xl shadow-2xl p-6 flex flex-col gap-4 animate-slide-up">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-secondary text-[24px]">lock_reset</span>
+                <h3 className="font-headline-sm text-headline-sm text-primary font-bold">Recuperar Senha</h3>
+              </div>
+              <button
+                type="button"
+                className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-on-surface cursor-pointer"
+                onClick={() => setShowForgotModal(false)}
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              Informe o e-mail da sua conta. Você receberá um link seguro para redefinir sua senha.
+            </p>
+            <form onSubmit={handleSendResetPassword} className="flex flex-col gap-3">
+              <div className="flex items-center px-3.5 h-12 bg-surface-container-low rounded-xl focus-within:bg-surface-container-lowest transition-colors shadow-sm">
+                <span className="material-symbols-outlined text-[20px] text-outline mr-2.5">mail</span>
+                <input
+                  type="email"
+                  required
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  placeholder="seu.email@exemplo.com"
+                  className="w-full bg-transparent font-body-md text-body-md text-on-surface outline-none placeholder:text-outline"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={forgotLoading}
+                className="w-full h-12 bg-primary text-on-primary rounded-xl font-label-lg text-label-lg flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60"
+              >
+                {forgotLoading ? "Enviando link..." : "Enviar link de recuperação"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

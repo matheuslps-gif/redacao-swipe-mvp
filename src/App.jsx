@@ -402,7 +402,9 @@ export default function App() {
               streak={streak}
               stats={sessionStats}
               totalStudied={studiedCount}
-              onContinueStudying={() => navigate('/estudo/argumentacao')}
+              onContinueStudying={() =>
+                navigate(`/estudo/${activeTrail?.id || 'fundamentos'}`)
+              }
               onBackToHome={() => navigate('/')}
             />
           }

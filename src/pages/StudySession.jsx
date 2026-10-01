@@ -64,6 +64,7 @@ export default function StudySession({
   };
 
   const triggerCardAction = (action) => {
+    if (animatingAction) return; // Trava contra cliques repetidos / race conditions
     setAnimatingAction(action);
     const offset = action === 'revisar' ? -380 : 380;
     setDragOffset(offset);
@@ -72,7 +73,7 @@ export default function StudySession({
       onSwipe?.(action);
       setDragOffset(0);
       setAnimatingAction(null);
-    }, 300);
+    }, 280);
   };
 
   const handleSaveClick = (e) => {
@@ -82,6 +83,19 @@ export default function StudySession({
     onToggleSave?.(currentCard.id);
     showToast(nextSavedState ? 'Card salvo na sua biblioteca' : 'Card removido dos salvos');
   };
+
+  // Se não houver card ou estiver finalizando, exibe transição limpa
+  if (!currentCard) {
+    return (
+      <div className="w-full min-h-screen bg-surface flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+        <div className="w-14 h-14 rounded-2xl bg-tertiary-container flex items-center justify-center text-tertiary-fixed shadow-md mb-4 animate-pulse">
+          <span className="material-symbols-outlined text-[32px]">style</span>
+        </div>
+        <h2 className="font-headline-md text-headline-md text-primary font-bold">Finalizando rodada...</h2>
+        <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Calculando seu progresso...</p>
+      </div>
+    );
+  }
 
   // Fallback defaults se algum card não tiver certos campos
   const cardTitle = currentCard?.title || 'Conceito da Redação';
