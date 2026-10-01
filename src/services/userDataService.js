@@ -194,8 +194,15 @@ export const userDataService = {
           .order('created_at', { ascending: true });
 
         if (data && !error) {
-          localStorage.setItem(`redacaoSwipeReviews_${userId}`, JSON.stringify(data));
-          return data;
+          // Deduplica mantendo o review mais recente por card_id
+          const latestByCard = {};
+          data.forEach((r) => {
+            if (r.card_id) latestByCard[r.card_id] = r;
+          });
+          const deduplicated = Object.values(latestByCard);
+
+          localStorage.setItem(`redacaoSwipeReviews_${userId}`, JSON.stringify(deduplicated));
+          return deduplicated;
         }
       } catch (err) {
         console.warn('Fallback para reviews locais:', err.message);
@@ -203,7 +210,17 @@ export const userDataService = {
     }
 
     const localReviews = localStorage.getItem(`redacaoSwipeReviews_${userId}`);
-    return localReviews ? JSON.parse(localReviews) : [];
+    if (localReviews) {
+      try {
+        const parsed = JSON.parse(localReviews);
+        const latestByCard = {};
+        parsed.forEach((r) => {
+          if (r.card_id) latestByCard[r.card_id] = r;
+        });
+        return Object.values(latestByCard);
+      } catch {}
+    }
+    return [];
   },
 
   // Registra avaliação de um card (Swipe: 'dominei' ou 'revisar')
@@ -217,23 +234,49 @@ export const userDataService = {
       created_at: new Date().toISOString(),
     };
 
-    // Atualiza cache local
+    // Atualiza cache local de forma deduplicada
     const localReviews = localStorage.getItem(`redacaoSwipeReviews_${userId}`);
-    const reviewsList = localReviews ? JSON.parse(localReviews) : [];
+    let reviewsList = localReviews ? JSON.parse(localReviews) : [];
+    reviewsList = reviewsList.filter((r) => r.card_id !== cardId);
     reviewsList.push(reviewEntry);
     localStorage.setItem(`redacaoSwipeReviews_${userId}`, JSON.stringify(reviewsList));
 
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('user_card_reviews').insert({
-          user_id: userId,
-          card_id: cardId,
-          trail_id: trailId,
-          action,
-          created_at: reviewEntry.created_at,
-        });
-      } catch (err) {
-        console.warn('Erro ao registrar review no Supabase:', err.message);
+        // Tenta upsert se a tabela tiver restrição de unicidade
+        const { error } = await supabase.from('user_card_reviews').upsert(
+          {
+            user_id: userId,
+            card_id: cardId,
+            trail_id: trailId,
+            action,
+            created_at: reviewEntry.created_at,
+          },
+          { onConflict: 'user_id,card_id' }
+        );
+
+        if (error) {
+          // Fallback para insert normal
+          await supabase.from('user_card_reviews').insert({
+            user_id: userId,
+            card_id: cardId,
+            trail_id: trailId,
+            action,
+            created_at: reviewEntry.created_at,
+          });
+        }
+      } catch (_err) {
+        try {
+          await supabase.from('user_card_reviews').insert({
+            user_id: userId,
+            card_id: cardId,
+            trail_id: trailId,
+            action,
+            created_at: reviewEntry.created_at,
+          });
+        } catch (insertErr) {
+          console.warn('Erro ao registrar review no Supabase:', insertErr.message);
+        }
       }
     }
   },

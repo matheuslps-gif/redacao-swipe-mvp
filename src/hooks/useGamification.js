@@ -10,20 +10,38 @@ const useGamification = (userId = null) => {
     let isMounted = true;
 
     async function loadData() {
-      if (!userId) {
+      let currentStreak = 0;
+      let lastDate = null;
+
+      if (userId) {
+        const progress = await userDataService.getUserProgress(userId);
+        if (progress) {
+          currentStreak = progress.streak || 0;
+          lastDate = progress.lastStudyDate;
+        }
+      } else {
         const fallbackStreak = localStorage.getItem('redacaoSwipeStreak');
         const fallbackDate = localStorage.getItem('redacaoSwipeLastStudyDate');
-        if (isMounted) {
-          if (fallbackStreak) setStreak(parseInt(fallbackStreak, 10));
-          if (fallbackDate) setLastStudyDate(new Date(fallbackDate));
-        }
-        return;
+        if (fallbackStreak) currentStreak = parseInt(fallbackStreak, 10);
+        if (fallbackDate) lastDate = new Date(fallbackDate);
       }
 
-      const progress = await userDataService.getUserProgress(userId);
-      if (isMounted && progress) {
-        setStreak(progress.streak);
-        setLastStudyDate(progress.lastStudyDate);
+      // Validação de quebra de sequência se mais de 1 dia se passou desde o último estudo
+      if (lastDate) {
+        const today = new Date();
+        const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const startOfLast = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+        const diffDays = Math.round((startOfToday - startOfLast) / (1000 * 60 * 60 * 24));
+
+        if (diffDays > 1) {
+          // Quebrou a sequência (passou mais de 1 dia sem atividade)
+          currentStreak = 0;
+        }
+      }
+
+      if (isMounted) {
+        setStreak(currentStreak);
+        setLastStudyDate(lastDate);
       }
     }
 
@@ -34,28 +52,35 @@ const useGamification = (userId = null) => {
     };
   }, [userId]);
 
-  // Atualiza a ofensiva/streak diária
+  // Atualiza a ofensiva/streak diária ao realizar atividade
   const updateStreak = useCallback(() => {
     const today = new Date();
-    const todayDate = today.toDateString();
-    const lastDate = lastStudyDate ? lastStudyDate.toDateString() : null;
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-    if (lastDate === todayDate) {
-      // Já estudou hoje, mantém a ofensiva
-      return streak;
+    let lastDate = lastStudyDate;
+    if (!lastDate && userId) {
+      const cached = localStorage.getItem(`redacaoSwipeLastStudyDate_${userId}`);
+      if (cached) lastDate = new Date(cached);
     }
 
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayDate = yesterday.toDateString();
+    let newStreak = streak;
 
-    let newStreak;
+    if (lastDate) {
+      const startOfLast = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+      const diffDays = Math.round((startOfToday - startOfLast) / (1000 * 60 * 60 * 24));
 
-    if (lastDate === yesterdayDate) {
-      // Dia consecutivo: incrementa
-      newStreak = streak + 1;
+      if (diffDays === 0) {
+        // Já estudou hoje, mantém a ofensiva ativa (mínimo 1 se tiver streak)
+        newStreak = Math.max(1, streak);
+      } else if (diffDays === 1) {
+        // Dia consecutivo (ontem -> hoje): incrementa a ofensiva
+        newStreak = (streak || 0) + 1;
+      } else {
+        // Mais de 1 dia sem atividade: reinicia a ofensiva em 1
+        newStreak = 1;
+      }
     } else {
-      // Primeira vez ou quebra de ofensiva: reinicia em 1
+      // Primeiro estudo registrado
       newStreak = 1;
     }
 
@@ -64,10 +89,6 @@ const useGamification = (userId = null) => {
 
     // Salva isolado no Supabase / LocalStorage
     userDataService.saveStreak(userId, newStreak, today);
-
-    // Salva também no fallback global para compatibilidade
-    localStorage.setItem('redacaoSwipeStreak', newStreak.toString());
-    localStorage.setItem('redacaoSwipeLastStudyDate', today.toISOString());
 
     return newStreak;
   }, [lastStudyDate, streak, userId]);

@@ -206,6 +206,23 @@ export function calculateUserAnalytics(reviews = []) {
     const pct = Math.round((score / 200) * 100);
     totalScoreSum += score;
 
+    let status = 'Não iniciado';
+    let statusColor = 'bg-surface-container text-outline';
+
+    if (pct >= 80) {
+      status = 'Consolidado (Forte)';
+      statusColor = 'bg-tertiary-fixed/40 text-on-tertiary-fixed-variant font-semibold';
+    } else if (pct >= 40) {
+      status = 'Em desenvolvimento';
+      statusColor = 'bg-primary-fixed/40 text-primary font-semibold';
+    } else if (reviewing > 0) {
+      status = 'Ponto de atenção';
+      statusColor = 'bg-secondary-fixed text-on-secondary-fixed-variant font-semibold';
+    } else if (mastered > 0) {
+      status = 'Iniciado';
+      statusColor = 'bg-surface-container text-on-surface-variant';
+    }
+
     return {
       key: cfg.key,
       name: cfg.name,
@@ -219,6 +236,8 @@ export function calculateUserAnalytics(reviews = []) {
       reviewCount: reviewing,
       totalCards: total,
       bar: cfg.bar,
+      status,
+      statusColor,
     };
   });
 

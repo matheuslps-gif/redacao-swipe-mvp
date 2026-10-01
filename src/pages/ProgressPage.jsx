@@ -297,11 +297,18 @@ export default function ProgressPage({
               </span>
             </div>
 
-            <div className="space-y-3 pt-1">
+            <div className="space-y-4 pt-1">
               {competencies.map((comp) => (
-                <div key={comp.name} className="space-y-1">
-                  <div className="flex justify-between text-body-sm">
-                    <span className="font-medium text-on-surface">{comp.name}</span>
+                <div key={comp.name} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-body-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-on-surface">{comp.name}</span>
+                      {comp.status && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${comp.statusColor}`}>
+                          {comp.status}
+                        </span>
+                      )}
+                    </div>
                     <span className="font-bold text-primary">{comp.score}</span>
                   </div>
                   <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
@@ -310,7 +317,10 @@ export default function ProgressPage({
                       style={{ width: `${comp.pct}%` }}
                     />
                   </div>
-                  <span className="text-[11px] text-on-surface-variant">{comp.label}</span>
+                  <div className="flex items-center justify-between text-[11px] text-on-surface-variant">
+                    <span>{comp.label}</span>
+                    <span>{comp.pct}% de domínio</span>
+                  </div>
                 </div>
               ))}
             </div>

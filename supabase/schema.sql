@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- REDACAO.SWIPE — SUPABASE SCHEMA & ROW LEVEL SECURITY (RLS) POLICIES
--- Execute este script no SQL Editor do painel Supabase
+-- Execute este script no SQL Editor do painel Supabase (https://supabase.com)
 -- ==============================================================================
 
 -- 1. TABELA DE PERFIS E PROGRESSO DO USUÁRIO
@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   daily_goal INTEGER DEFAULT 10,
   xp INTEGER DEFAULT 0,
   level INTEGER DEFAULT 1,
+  initial_focus TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -32,8 +33,14 @@ CREATE TABLE IF NOT EXISTS public.user_card_reviews (
   card_id TEXT NOT NULL,
   trail_id TEXT NOT NULL,
   action TEXT NOT NULL CHECK (action IN ('dominei', 'revisar')),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, card_id)
 );
+
+-- ÍNDICES DE PERFORMANCE
+CREATE INDEX IF NOT EXISTS idx_reviews_user_trail ON public.user_card_reviews(user_id, trail_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_user_card ON public.user_card_reviews(user_id, card_id);
+CREATE INDEX IF NOT EXISTS idx_saved_user_card ON public.user_saved_cards(user_id, card_id);
 
 -- ==============================================================================
 -- HABILITAÇÃO DO ROW LEVEL SECURITY (RLS) EM TODAS AS TABELAS
@@ -43,59 +50,57 @@ ALTER TABLE public.user_saved_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_card_reviews ENABLE ROW LEVEL SECURITY;
 
 -- ==============================================================================
--- POLÍTICAS DE RLS: ISOLAMENTO TOTAL (auth.uid() = user_id)
+-- POLÍTICAS DE RLS: ISOLAMENTO TOTAL (auth.uid() = user_id / id)
 -- ==============================================================================
 
 -- Políticas para 'profiles'
 DROP POLICY IF EXISTS "Usuários podem visualizar apenas seu próprio perfil" ON public.profiles;
 CREATE POLICY "Usuários podem visualizar apenas seu próprio perfil"
-  ON public.profiles
-  FOR SELECT
+  ON public.profiles FOR SELECT
   USING (auth.uid() = id);
 
 DROP POLICY IF EXISTS "Usuários podem inserir seu próprio perfil" ON public.profiles;
 CREATE POLICY "Usuários podem inserir seu próprio perfil"
-  ON public.profiles
-  FOR INSERT
+  ON public.profiles FOR INSERT
   WITH CHECK (auth.uid() = id);
 
 DROP POLICY IF EXISTS "Usuários podem atualizar apenas seu próprio perfil" ON public.profiles;
 CREATE POLICY "Usuários podem atualizar apenas seu próprio perfil"
-  ON public.profiles
-  FOR UPDATE
+  ON public.profiles FOR UPDATE
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
 -- Políticas para 'user_saved_cards'
 DROP POLICY IF EXISTS "Usuários podem visualizar apenas seus próprios cards salvos" ON public.user_saved_cards;
 CREATE POLICY "Usuários podem visualizar apenas seus próprios cards salvos"
-  ON public.user_saved_cards
-  FOR SELECT
+  ON public.user_saved_cards FOR SELECT
   USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "Usuários podem salvar cards para si mesmos" ON public.user_saved_cards;
 CREATE POLICY "Usuários podem salvar cards para si mesmos"
-  ON public.user_saved_cards
-  FOR INSERT
+  ON public.user_saved_cards FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "Usuários podem remover apenas seus próprios cards salvos" ON public.user_saved_cards;
 CREATE POLICY "Usuários podem remover apenas seus próprios cards salvos"
-  ON public.user_saved_cards
-  FOR DELETE
+  ON public.user_saved_cards FOR DELETE
   USING (auth.uid() = user_id);
 
 -- Políticas para 'user_card_reviews'
 DROP POLICY IF EXISTS "Usuários podem visualizar apenas seus próprios reviews" ON public.user_card_reviews;
 CREATE POLICY "Usuários podem visualizar apenas seus próprios reviews"
-  ON public.user_card_reviews
-  FOR SELECT
+  ON public.user_card_reviews FOR SELECT
   USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS "Usuários podem inserir apenas seus próprios reviews" ON public.user_card_reviews;
 CREATE POLICY "Usuários podem inserir apenas seus próprios reviews"
-  ON public.user_card_reviews
-  FOR INSERT
+  ON public.user_card_reviews FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Usuários podem atualizar apenas seus próprios reviews" ON public.user_card_reviews;
+CREATE POLICY "Usuários podem atualizar apenas seus próprios reviews"
+  ON public.user_card_reviews FOR UPDATE
+  USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
 -- ==============================================================================

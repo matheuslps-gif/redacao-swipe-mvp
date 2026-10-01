@@ -38,6 +38,7 @@ function MainLayout({ children, activePath }) {
 function StudySessionRoute({
   dailyGoal,
   savedCardIds,
+  userReviews,
   onToggleSaveCard,
   onSwipeAction,
   onOpenProfile,
@@ -54,7 +55,7 @@ function StudySessionRoute({
     progress,
     totalCards,
     currentIndex,
-  } = useFlashcards(flashcardsData, selectedTrail);
+  } = useFlashcards(flashcardsData, selectedTrail, userReviews);
 
   const isCurrentSaved = currentCard ? savedCardIds.includes(currentCard.id) : false;
 
@@ -93,17 +94,45 @@ export default function App() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
-  // Meta diária isolada por usuário (padrão: 10)
-  const [dailyGoal, setDailyGoal] = useState(10);
+  // Lazy initializers com fallback do cache local por user_id (evita flash de dados vazios no F5)
+  const [dailyGoal, setDailyGoal] = useState(() => {
+    if (user?.id) {
+      const cached = localStorage.getItem(`redacaoSwipeDailyGoal_${user.id}`);
+      if (cached) return parseInt(cached, 10);
+    }
+    return 10;
+  });
 
-  // Foco inicial escolhido no Zero State (ex: 'C1')
-  const [initialFocus, setInitialFocus] = useState('C1');
+  const [initialFocus, setInitialFocus] = useState(() => {
+    if (user?.id) {
+      return localStorage.getItem(`redacaoSwipeInitialFocus_${user.id}`) || 'C1';
+    }
+    return 'C1';
+  });
 
-  // Cards salvos isolados por usuário (novo usuário começa vazio [])
-  const [savedCardIds, setSavedCardIds] = useState([]);
+  const [savedCardIds, setSavedCardIds] = useState(() => {
+    if (user?.id) {
+      const cached = localStorage.getItem(`redacaoSwipeSavedCards_${user.id}`);
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {}
+      }
+    }
+    return [];
+  });
 
-  // Histórico de reviews/swipes do usuário no Supabase
-  const [userReviews, setUserReviews] = useState([]);
+  const [userReviews, setUserReviews] = useState(() => {
+    if (user?.id) {
+      const cached = localStorage.getItem(`redacaoSwipeReviews_${user.id}`);
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {}
+      }
+    }
+    return [];
+  });
 
   // Estatísticas da rodada diária atual
   const [sessionStats, setSessionStats] = useState({
@@ -117,7 +146,7 @@ export default function App() {
   // Hook de Gamificação com isolamento por usuário
   const { streak, updateStreak } = useGamification(user?.id);
 
-  // Carrega preferências e histórico real do usuário
+  // Carrega preferências e histórico real do usuário no Supabase
   const loadUserData = useCallback(async () => {
     if (!user?.id) return;
     try {
@@ -188,18 +217,23 @@ export default function App() {
 
     if (user?.id && card?.id) {
       userDataService.recordCardReview(user.id, card.id, trailId, action);
-      // Atualiza reativamente os reviews no estado
-      setUserReviews((prev) => [
-        ...prev,
-        { card_id: card.id, trail_id: trailId, action, created_at: new Date().toISOString() },
-      ]);
+      // Atualiza reativamente os reviews no estado deduplicando por card_id
+      setUserReviews((prev) => {
+        const filtered = prev.filter((r) => r.card_id !== card.id);
+        return [
+          ...filtered,
+          { card_id: card.id, trail_id: trailId, action, created_at: new Date().toISOString() },
+        ];
+      });
     }
+
+    // Registra atividade do dia e atualiza ofensiva no Supabase
+    updateStreak();
 
     const nextCount = studiedCount + 1;
     setStudiedCount(nextCount);
 
     if (nextCount >= dailyGoal) {
-      updateStreak();
       navigate('/concluido');
     }
   };
@@ -338,6 +372,7 @@ export default function App() {
             <StudySessionRoute
               dailyGoal={dailyGoal}
               savedCardIds={savedCardIds}
+              userReviews={userReviews}
               onToggleSaveCard={handleToggleSaveCard}
               onSwipeAction={handleSwipeAction}
               onOpenProfile={() => navigate('/perfil')}
@@ -351,6 +386,7 @@ export default function App() {
             <StudySessionRoute
               dailyGoal={dailyGoal}
               savedCardIds={savedCardIds}
+              userReviews={userReviews}
               onToggleSaveCard={handleToggleSaveCard}
               onSwipeAction={handleSwipeAction}
               onOpenProfile={() => navigate('/perfil')}
